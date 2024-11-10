@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Secure Vault</title>
+  </head>
+  <body>
+    <h1>Secure Vault</h1>
+
+    <textarea
+      id="messageInput"
+      placeholder="Enter your secure message"
+    ></textarea>
+    <input type="password" id="passwordInput" placeholder="Enter a password" />
+    <button onclick="generateKeyPair()">Generate Key Pair</button>
+    <button onclick="signAndEncryptMessage()">Sign and Encrypt Message</button>
+
+    <p>Public Key: <span id="publicKeyOutput"></span></p>
+    <p>Response: <span id="responseOutput"></span></p>
+
+    <script>
+      let publicKey, privateKey;
+
+      // Step 1: Generate RSA key pair
+      async function generateKeyPair() {
+        const keyPair = await crypto.subtle.generateKey(
+          {
+            name: 'RSA-OAEP',
+            modulusLength: 2048,
+            publicExponent: new Uint8Array([1, 0, 1]),
+            hash: 'SHA-256',
+          },
+          true,
+          ['encrypt', 'decrypt']
+        );
+        publicKey = keyPair.publicKey;
+        privateKey = keyPair.privateKey;
+
+        const publicKeyJwk = await crypto.subtle.exportKey('jwk', publicKey);
+        document.getElementById('publicKeyOutput').innerText =
+          JSON.stringify(publicKeyJwk);
+        alert('Key pair generated!');
+      }
+
+      // Step 2: Sign the message and encrypt it
+      async function signAndEncryptMessage() {
+        const message = document.getElementById('messageInput').value;
+        const password = document.getElementById('passwordInput').value;
+
+        if (!publicKey || !privateKey) {
+          alert('Please generate a key pair first.');
+          return;
+        }
+
+        // Encode message
+        const encodedMessage = new TextEncoder().encode(message);
+
+        // Sign the message with private key
+        const signature = await crypto.subtle.sign(
+          { name: 'RSASSA-PKCS1-v1_5' },
+          privateKey,
+          encodedMessage
+        );
+
+        // Encrypt the message with the public key
+        const encryptedMessage = await crypto.subtle.encrypt(
+          { name: 'RSA-OAEP' },
+          publicKey,
+          encodedMessage
+        );
+
+        // Convert encrypted message and signature to Base64 for transmission
+        const signatureBase64 = btoa(
+          String.fromCharCode(...new Uint8Array(signature))
+        );
+        const encryptedMessageBase64 = btoa(
+          String.fromCharCode(...new Uint8Array(encryptedMessage))
+        );
+
+        // Send data to backend
+        const response = await fetch('/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            encryptedMessage: encryptedMessageBase64,
+            signature: signatureBase64,
+          }),
+        });
+
+        const result = await response.text();
+        document.getElementById('responseOutput').innerText = result;
+      }
+
+      // Utility function: Convert ArrayBuffer to Base64
+      function arrayBufferToBase64(buffer) {
+        return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      }
+    </script>
+  </body>
+</html>
